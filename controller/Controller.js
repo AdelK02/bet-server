@@ -5502,13 +5502,14 @@ const getDrawByTabAndName = async (req, res) => {
       return res.status(400).json({ message: "activeTab and drawName are required" });
     }
 
+    const searchLabels = getSearchLabels(drawName);
     const data = await Schema.findOne(
       {
         activeTab: Number(activeTab),
-        "draws.drawName": drawName
+        "draws.drawName": { $in: searchLabels }
       },
       {
-        draws: { $elemMatch: { drawName } }
+        draws: { $elemMatch: { drawName: { $in: searchLabels } } }
       }
     );
 
@@ -5647,7 +5648,11 @@ const updateSuperForDraw = async (req, res) => {
     }
     const doc = await Schema.findOne({ activeTab: Number(activeTab) });
     if (!doc) return res.status(404).json({ message: "Tab not found" });
-    const draw = doc.draws.find(d => d.drawName === drawName);
+    const searchLabels = getSearchLabels(drawName).map(l => l.toUpperCase().replace(/\s/g, ''));
+    const draw = doc.draws.find(d => {
+      const dNorm = d.drawName.toUpperCase().replace(/\s/g, '');
+      return searchLabels.includes(dNorm);
+    });
     if (!draw) return res.status(404).json({ message: "Draw not found" });
     updates.forEach(u => {
       let row;

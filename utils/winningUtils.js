@@ -69,6 +69,26 @@ const computeWinType = (entry, results) => {
     return wins;
 };
 
+const fallbackRates = {
+    "A": { amount: 100, super: 0 },
+    "B": { amount: 100, super: 0 },
+    "C": { amount: 100, super: 0 },
+    "AB": { amount: 700, super: 30 },
+    "BC": { amount: 700, super: 30 },
+    "AC": { amount: 700, super: 30 },
+    "SUPER 1": { amount: 5000, super: 400 },
+    "SUPER 2": { amount: 500, super: 50 },
+    "SUPER 3": { amount: 250, super: 20 },
+    "SUPER 4": { amount: 100, super: 20 },
+    "SUPER 5": { amount: 50, super: 20 },
+    "SUPER other": { amount: 20, super: 10 },
+    "BOX perfect": { amount: 3000, super: 300 },
+    "BOX permutation": { amount: 800, super: 30 },
+    "BOX perfect (2 Same)": { amount: 3800, super: 330 },
+    "BOX permutation (2 Same)": { amount: 1600, super: 60 },
+    "BOX perfect (3 Same)": { amount: 7000, super: 450 }
+};
+
 const calculateWinAmountFull = (entry, results, schemeData, fallbackPrizes = {}) => {
     if (!results || !results["1"]) return [];
 
@@ -129,13 +149,16 @@ const calculateWinAmountFull = (entry, results, schemeData, fallbackPrizes = {})
         }
 
         const count = entry.count || 0;
-        const fallbackSuper = fallbackPrizes[winType] || 0;
+        const fallback = fallbackRates[winType] || { amount: 0, super: 0 };
+        
+        const finalAmount = row ? (row.amount !== undefined ? row.amount : fallback.amount) : fallback.amount;
 
-        // 🔑 THE FIX: Use fallbackSuper if row missing
-        const finalSuper = row ? (row.super || 0) : fallbackSuper;
+        // Prioritize backend-provided fallbackPrizes map, then user's row, then static fallbackRates
+        const superFallback = fallbackPrizes[winType] !== undefined ? fallbackPrizes[winType] : fallback.super;
+        const finalSuper = row ? (row.super !== undefined ? row.super : superFallback) : superFallback;
 
         allWins.push({
-            prize: (row ? (row.amount || 0) : 0) * count,
+            prize: finalAmount * count,
             superPrize: finalSuper * count,
             winType: winType
         });
