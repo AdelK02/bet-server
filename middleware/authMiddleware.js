@@ -24,4 +24,12 @@ const adminMiddleware = (req, res, next) => {
   }
 };
 
-module.exports = { authMiddleware, adminMiddleware };
+const adminOrMasterMiddleware = (req, res, next) => {
+  if (req.user && (req.user.userType === 'admin' || req.user.userType === 'master')) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Access denied: Admins or Masters only' });
+  }
+};
+
+module.exports = { authMiddleware, adminMiddleware, adminOrMasterMiddleware };

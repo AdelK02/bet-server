@@ -10,7 +10,7 @@ const Controller = require('./controller/Controller');
 const MainUser = require('./model/MainUser');
 const Entry = require('./model/Entry');
 const RateMaster = require('./model/RateMaster');
-const { authMiddleware, adminMiddleware } = require('./middleware/authMiddleware');
+const { authMiddleware, adminMiddleware, adminOrMasterMiddleware } = require('./middleware/authMiddleware');
 
 
 const app = express();
@@ -57,7 +57,7 @@ app.delete("/delete-blockdate/:id", authMiddleware, adminMiddleware, Controller.
 
 app.get('/users', authMiddleware, Controller.getAllUsers);
 app.post('/getusersByid', authMiddleware, Controller.getusersByid);
-app.post('/newuser', authMiddleware, adminMiddleware, Controller.createUser);
+app.post('/newuser', authMiddleware, adminOrMasterMiddleware, Controller.createUser);
 app.post('/addEntries', authMiddleware, Controller.addEntries);
 app.post('/ticket-limit', authMiddleware, adminMiddleware, Controller.saveTicketLimit);
 app.post('/ratemaster', authMiddleware, adminMiddleware, Controller.saveRateMaster);
@@ -80,8 +80,8 @@ app.get('/blockTime/:drawLabel/:type', authMiddleware, Controller.getBlockTimeBy
 app.get('/blockTimes', authMiddleware, adminMiddleware, Controller.getAllBlockTimes);
 app.post('/countByNumber', authMiddleware, Controller.countByNumber);
 app.get('/getticketLimit', authMiddleware, Controller.getLatestTicketLimit);
-app.patch("/user/blockLogin/:id", authMiddleware, adminMiddleware, Controller.toggleLoginBlock);
-app.patch('/blockSales/:id', authMiddleware, adminMiddleware, Controller.toggleSalesBlock);
+app.patch("/user/blockLogin/:id", authMiddleware, adminOrMasterMiddleware, Controller.toggleLoginBlock);
+app.patch('/blockSales/:id', authMiddleware, adminOrMasterMiddleware, Controller.toggleSalesBlock);
 app.put('/users/:username', authMiddleware, Controller.updatePasswordController);
 app.put('/users/update/:id', authMiddleware, Controller.updateUser);
 app.delete('/users/:id', authMiddleware, adminMiddleware, Controller.deleteUser);

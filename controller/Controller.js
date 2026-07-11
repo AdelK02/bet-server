@@ -421,14 +421,14 @@ const toggleSalesBlock = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 🛡️ Security Check: Admins only
-    if (req.user.userType !== 'admin') {
-      return res.status(403).json({ message: 'Access denied: Admins only' });
-    }
-
     // Find the user
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // 🛡️ Security Check: Admins or the creator of the user
+    if (req.user.userType !== 'admin' && user.createdBy !== req.user.username) {
+      return res.status(403).json({ message: 'Access denied: Admins or creator only' });
+    }
 
     // Toggle the salesBlocked status
     user.salesBlocked = !user.salesBlocked;
@@ -451,6 +451,11 @@ const toggleLoginBlock = async (req, res) => {
 
     const user = await MainUser.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
+
+    // 🛡️ Security Check: Admins or the creator of the user
+    if (req.user.userType !== 'admin' && user.createdBy !== req.user.username) {
+      return res.status(403).json({ message: 'Access denied: Admins or creator only' });
+    }
 
     user.blocked = !user.blocked; // ✅ match frontend field name
     await user.save();
@@ -638,9 +643,12 @@ const updateUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'User ID is required' });
     }
 
-    // 🛡️ Security Check: Ensure user matches or is admin
+    // 🛡️ Security Check: Ensure user matches, is admin, or is the creator of the user
     if (req.user.userType !== 'admin' && req.user.id !== id) {
-      return res.status(403).json({ success: false, message: 'Access denied: You can only update your own profile' });
+      const userToUpdate = await MainUser.findById(id);
+      if (!userToUpdate || userToUpdate.createdBy !== req.user.username) {
+        return res.status(403).json({ success: false, message: 'Access denied: You can only update your own profile or users you created' });
+      }
     }
 
     // Build update object
@@ -1641,13 +1649,21 @@ const createUser = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // If not admin, enforce that createdBy is the logged-in user's username
+    let finalCreatedBy = createdBy;
+    if (req.user.userType !== 'admin') {
+      finalCreatedBy = req.user.username;
+    } else if (!finalCreatedBy) {
+      finalCreatedBy = req.user.username || 'admin';
+    }
+
     const newUser = new MainUser({
       name,
       username,
       password: hashedPassword,
       // nonHashedPassword: password, // ❌ REMOVED SECURITY RISK
       scheme,
-      createdBy,
+      createdBy: finalCreatedBy,
       usertype, // ✅ added usertype to the document
     });
 

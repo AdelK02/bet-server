@@ -9,13 +9,13 @@ const {
   toggleSalesBlock, updatePasswordController, getResult 
 } = require('../controller/Controller');
 
-const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
+const { authMiddleware, adminMiddleware, adminOrMasterMiddleware } = require('../middleware/authMiddleware');
 
-// User Management (Admin only)
-router.post('/newuser', authMiddleware, adminMiddleware, createUser);
+// User Management
+router.post('/newuser', authMiddleware, adminOrMasterMiddleware, createUser);
 router.delete('/users/:id', authMiddleware, adminMiddleware, deleteUser);
 router.get('/users', authMiddleware, getAllUsers);
-router.patch("/user/blockLogin/:id", authMiddleware, adminMiddleware, toggleLoginBlock);
+router.patch("/user/blockLogin/:id", authMiddleware, adminOrMasterMiddleware, toggleLoginBlock);
 
 // Configuration & Results (Admin only)
 router.post('/ticket-limit', authMiddleware, adminMiddleware, saveTicketLimit);
@@ -37,7 +37,7 @@ router.get('/rateMaster', authMiddleware, getRateMaster);
 router.get('/getBlockTime/:drawLabel', authMiddleware, getBlockTime);
 router.post('/countByNumber', authMiddleware, countByNumber);
 router.get('/getticketLimit', authMiddleware, getLatestTicketLimit);
-router.patch('/blockSales/:id', authMiddleware, toggleSalesBlock);
+router.patch('/blockSales/:id', authMiddleware, adminOrMasterMiddleware, toggleSalesBlock);
 router.put('/users/:username', authMiddleware, updatePasswordController);
 
 // Login (Public)
