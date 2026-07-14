@@ -12,6 +12,7 @@ const BillCounter = require('./model/BillCounter');
 const User = require('./model/MainUser'); // adjust the path to where your MainUser.js is
 const BlockDate = require("./model/BlockDate");
 const BlockNumber = require("./model/BlockNumber");
+const DailyUserLimit = require('./model/DailyUserLimit');
 const OverflowLimit = require('../model/OverflowLimit');
 const Schema = require('../model/Schema')
 const UserAmount = require('../model/FixAmount')
@@ -122,10 +123,17 @@ const adjustEntryLimits = async (entry, countDelta) => {
     const rawType = extractBaseType(entry.type);
     const dateStr = formatDateIST(new Date(entry.date));
     const number = entry.number;
+    const user = entry.createdBy;
 
     // Update DailyLimitUsage
     await DailyLimitUsage.updateOne(
       { date: dateStr, type: rawType, number: number },
+      { $inc: { remaining: -countDelta } }
+    );
+
+    // Update DailyUserLimit
+    await DailyUserLimit.updateOne(
+      { date: dateStr, user: user, type: rawType, number: number },
       { $inc: { remaining: -countDelta } }
     );
   } catch (err) {
@@ -3739,7 +3747,52 @@ const saveValidEntries = async (req, res) => {
     }
     validEntries = nextValidEntries;
 
+    // PASS 3: User Daily Usage Limits
+    const keysForUserUsage = [...new Set(validEntries.map(e => `${extractBaseType(e.type)}-${e.number}`))];
+    const userRemainingMap = await countByUserUsageF(targetDateStr, loggedInUser, keysForUserUsage);
 
+    // 🔥 SELF-HEALING: Fetch actual usage to ensure we never have stale "remaining" values
+    const actualUsageMap = await getActualUsageMap(targetDateStr, loggedInUser, keysForUserUsage);
+
+    nextValidEntries = [];
+    const usedInBatchByNumber = {}; // track use within this batch to subtract correctly
+
+    for (const entry of validEntries) {
+      const rawTypes = extractBaseType(entry.type);
+      const number = entry.number;
+      const key = `${rawTypes}-${number}`;
+
+      const rawType = key.split('-')[0];
+      const maxLimit = parseInt(allLimits[rawType] || '9999', 10); // userBlockMap logic was already handled in PASS 2, fallback to regular max limit here.
+
+      const remainingFromDb = typeof userRemainingMap[key]?.remaining === 'number'
+        ? userRemainingMap[key].remaining
+        : maxLimit;
+
+      // 🛡️ EFFECTIVE REMAINING: Sync with actual database state
+      const usedToday = actualUsageMap[key] || 0;
+      const effectiveRemaining = Math.max(remainingFromDb, maxLimit - usedToday);
+      const remainingForBatch = Math.max(0, effectiveRemaining - (usedInBatchByNumber[key] || 0));
+
+      if (entry.count > remainingForBatch) {
+        const allowed = Math.max(0, remainingForBatch);
+        const removed = entry.count - allowed;
+
+        exceededMap[key].exceeded += removed;
+        exceededMap[key].added -= removed;
+        exceededMap[key].reason = 'User daily limit';
+        exceededMap[key].limit = maxLimit;
+
+        if (allowed > 0) {
+          nextValidEntries.push({ ...entry, count: allowed });
+          usedInBatchByNumber[key] = (usedInBatchByNumber[key] || 0) + allowed;
+        }
+      } else {
+        nextValidEntries.push(entry);
+        usedInBatchByNumber[key] = (usedInBatchByNumber[key] || 0) + entry.count;
+      }
+    }
+    validEntries = nextValidEntries;
 
     const allExceeded = Object.values(exceededMap).filter(e => e.exceeded > 0);
 
@@ -3874,6 +3927,32 @@ const saveValidEntries = async (req, res) => {
       await DailyLimitUsage.bulkWrite(ops);
     }
 
+    // Per-user daily limit update
+    // Update DailyUserLimit by setting the NEW remaining value after this save
+    const userSummaryMap = {}; // number-type -> totalCountInBatch
+    validEntries.forEach((e) => {
+      const key = `${extractBaseType(e.type)}-${e.number}`;
+      userSummaryMap[key] = (userSummaryMap[key] || 0) + (e.count || 1);
+    });
+
+    const userOps = await Promise.all(
+      Object.entries(userSummaryMap).map(async ([key, count]) => {
+        const [rawType, number] = key.split('-');
+        const max = parseInt(allLimits[rawType] || '9999', 10);
+        const usedToday = actualUsageMap[key] || 0;
+        const newRemaining = Math.max(0, max - (usedToday + count));
+
+        return {
+          updateOne: {
+            filter: { date: targetDateStr, user: loggedInUser, type: rawType, number },
+            update: { $set: { remaining: newRemaining } },
+            upsert: true,
+          },
+        };
+      })
+    );
+
+    if (userOps.length > 0) await DailyUserLimit.bulkWrite(userOps);
 
     // 1️⃣1️⃣ Update SalesReportSummary Automatically
     try {
